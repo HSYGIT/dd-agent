@@ -13,6 +13,7 @@ from math import ceil
 
 # project
 from checks import AgentCheck
+from util import get_hostname_unix
 from config import _is_affirmative
 from utils.dockerutil import DockerUtil, MountException
 from utils.kubeutil import KubeUtil
@@ -110,6 +111,8 @@ CONTAINER = "container"
 PERFORMANCE = "performance"
 FILTERED = "filtered"
 IMAGE = "image"
+
+ECS_INTROSPECT_DEFAULT_PORT = 51678
 
 
 def get_filters(include, exclude):
@@ -427,13 +430,26 @@ class DockerDaemon(AgentCheck):
         ip = ecs_config.get('NetworkSettings', {}).get('IPAddress')
         ports = ecs_config.get('NetworkSettings', {}).get('Ports')
         port = ports.keys()[0].split('/')[0] if ports else None
+        if not ip and DockerUtil.is_dockerized():
+            cid = get_hostname_unix()
+            agent_config = self.docker_client.inspect_container(cid)
+            ip = agent_config.get('NetworkSettings', {}).get('Gateway')
+            port = ECS_INTROSPECT_DEFAULT_PORT
+        elif not ip:
+            ip = "localhost"
+            port = ECS_INTROSPECT_DEFAULT_PORT
+
         ecs_tags = {}
-        if ip and port:
-            tasks = requests.get('http://%s:%s/v1/tasks' % (ip, port)).json()
-            for task in tasks.get('Tasks', []):
-                for container in task.get('Containers', []):
-                    tags = ['task_name:%s' % task['Family'], 'task_version:%s' % task['Version']]
-                    ecs_tags[container['DockerId']] = tags
+        try:
+            if ip and port:
+                tasks = requests.get('http://%s:%s/v1/tasks' % (ip, port)).json()
+                tasks.raise_for_status()
+                for task in tasks.get('Tasks', []):
+                    for container in task.get('Containers', []):
+                        tags = ['task_name:%s' % task['Family'], 'task_version:%s' % task['Version']]
+                        ecs_tags[container['DockerId']] = tags
+        except requests.exceptions.HTTPError as e:
+            self.log.warning("Unable to collect ECS task names: %s" % e)
 
         self.ecs_tags = ecs_tags
 

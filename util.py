@@ -170,6 +170,14 @@ def check_yaml(conf_path):
         else:
             return check_config
 
+def get_hostname_unix():
+    try:
+        # try fqdn
+        out, _, rtcode = get_subprocess_output(['/bin/hostname', '-f'], log)
+        if rtcode == 0:
+            return out.strip()
+    except Exception:
+        return None
 
 def get_hostname(config=None):
     """
@@ -208,18 +216,9 @@ def get_hostname(config=None):
 
     # then move on to os-specific detection
     if hostname is None:
-        def _get_hostname_unix():
-            try:
-                # try fqdn
-                out, _, rtcode = get_subprocess_output(['/bin/hostname', '-f'], log)
-                if rtcode == 0:
-                    return out.strip()
-            except Exception:
-                return None
-
         os_name = get_os()
         if os_name in ['mac', 'freebsd', 'linux', 'solaris']:
-            unix_hostname = _get_hostname_unix()
+            unix_hostname = get_hostname_unix()
             if unix_hostname and is_valid_hostname(unix_hostname):
                 hostname = unix_hostname
 
