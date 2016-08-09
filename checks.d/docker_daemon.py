@@ -202,6 +202,7 @@ class DockerDaemon(AgentCheck):
             self.collect_image_size = _is_affirmative(instance.get('collect_image_size', False))
             self.collect_disk_stats = _is_affirmative(instance.get('collect_disk_stats', False))
             self.collect_ecs_tags = _is_affirmative(instance.get('ecs_tags', True)) and Platform.is_ecs_instance()
+            self.ecs_gw = instance.get('ecs_gw') if Platform.is_ecs_instance() else None
 
             self.ecs_tags = {}
 
@@ -431,9 +432,12 @@ class DockerDaemon(AgentCheck):
         ports = ecs_config.get('NetworkSettings', {}).get('Ports')
         port = ports.keys()[0].split('/')[0] if ports else None
         if not ip and DockerUtil.is_dockerized():
-            cid = get_hostname_unix()
-            agent_config = self.docker_client.inspect_container(cid)
-            ip = agent_config.get('NetworkSettings', {}).get('Gateway')
+            if not self.ecs_gw:
+                cid = get_hostname_unix()
+                agent_config = self.docker_client.inspect_container(cid)
+                ip = agent_config.get('NetworkSettings', {}).get('Gateway')
+            else:
+                ip = self.ecs_gw
             port = ECS_INTROSPECT_DEFAULT_PORT
         elif not ip:
             ip = "localhost"
